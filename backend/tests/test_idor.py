@@ -11,6 +11,7 @@ VALID_BODIES: dict[tuple[str, str], object] = {
     ("PATCH", "/api/decks/{deck_id}"): {"name": "Hijacked"},
     ("PUT", "/api/decks/{deck_id}/me"): {"new_cards_per_day": 1},
     ("POST", "/api/decks/{deck_id}/import"): EXAMPLE_DECK,
+    ("POST", "/api/decks/{deck_id}/import/batch"): {"files": [EXAMPLE_DECK]},
     ("POST", "/api/decks/{deck_id}/members"): {"username": "bob", "role": "editor"},
     ("PATCH", "/api/decks/{deck_id}/members/{user_id}"): {"role": "editor"},
     ("POST", "/api/decks/{deck_id}/cards"): BASIC_CARD,

@@ -1,6 +1,6 @@
 # Engram deck format, version 1
 
-A deck file is one JSON document, UTF-8 encoded. Exporting a deck produces this format, and importing accepts it. An import can either create a new deck or add the cards to an existing one; adding to an existing deck ignores `deck`. A complete example is in [`example-deck.json`](example-deck.json). Anki packages are imported separately; see [Importing from Anki](anki-import.md).
+A deck file is one JSON document, UTF-8 encoded. Exporting a deck produces this format, and importing accepts it. An import can either create a new deck or add the cards to an existing one; adding to an existing deck ignores `deck`. Several files can be imported at once; see [Importing several files](#importing-several-files). A complete example is in [`example-deck.json`](example-deck.json). Anki packages are imported separately; see [Importing from Anki](anki-import.md).
 
 Exported files include quiz answer keys. Anyone who receives one can see the answers.
 
@@ -63,7 +63,7 @@ Each text field holds at most 20,000 characters.
 
 ## Limits and errors
 
-The request body may be at most 2 MiB. A larger file is rejected with `413` before it is read.
+The request body may be at most 2 MiB (16 MiB for [several files](#importing-several-files)). A larger body is rejected with `413` before it is read.
 
 An invalid file is rejected as a whole with `422`, and nothing is imported. The response names the first bad field, then lists every problem:
 
@@ -78,3 +78,14 @@ An invalid file is rejected as a whole with `422`, and nothing is imported. The 
 ```
 
 Unknown fields are errors, not silently dropped, so a typo like `"qestion"` is caught.
+
+## Importing several files
+
+The web app takes several deck files in one pick. It sends them in one request, wrapped as `{"files": [<deck file>, …]}`:
+
+- `POST /api/decks/import/batch` creates one deck from each file, in order, and returns them.
+- `POST /api/decks/{deck_id}/import/batch` adds every file's cards to one deck, ignoring each file's `deck`.
+
+A batch holds 1 to 50 files and at most 20,000 cards in all, in a body of at most 16 MiB. It is all or nothing: if one file is invalid, nothing is imported, and the error names the file by its position, as in `files[2].cards[0].front`. The web app shows the file's name there instead.
+
+The single-file routes stay as they are, for scripts and older clients.

@@ -8,6 +8,15 @@ export const DropdownMenu = MenuPrimitive.Root;
 export const DropdownMenuTrigger = MenuPrimitive.Trigger;
 export const DropdownMenuRadioGroup = MenuPrimitive.RadioGroup;
 
+// Shared with the context menu, so both menus look and behave the same.
+export const menuContentClass =
+  "glass z-50 min-w-48 rounded-md p-1 text-sm text-popover-foreground animate-menu-in data-[state=closed]:animate-fade-out";
+
+export const menuItemClass =
+  "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none select-none transition-colors duration-(--duration-fast) data-disabled:opacity-50 data-highlighted:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";
+
+export const menuSeparatorClass = "my-1 h-px bg-border";
+
 export function DropdownMenuContent({
   className,
   sideOffset = 6,
@@ -18,7 +27,8 @@ export function DropdownMenuContent({
       <MenuPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          "glass z-50 min-w-48 origin-(--radix-dropdown-menu-content-transform-origin) rounded-md p-1 text-sm text-popover-foreground animate-menu-in data-[state=closed]:animate-fade-out",
+          menuContentClass,
+          "origin-(--radix-dropdown-menu-content-transform-origin)",
           className,
         )}
         {...props}
@@ -27,14 +37,11 @@ export function DropdownMenuContent({
   );
 }
 
-const itemClass =
-  "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 outline-none select-none transition-colors duration-(--duration-fast) data-disabled:opacity-50 data-highlighted:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground";
-
 export function DropdownMenuItem({
   className,
   ...props
 }: ComponentProps<typeof MenuPrimitive.Item>) {
-  return <MenuPrimitive.Item className={cn(itemClass, className)} {...props} />;
+  return <MenuPrimitive.Item className={cn(menuItemClass, className)} {...props} />;
 }
 
 export function DropdownMenuRadioItem({
@@ -43,7 +50,7 @@ export function DropdownMenuRadioItem({
   ...props
 }: ComponentProps<typeof MenuPrimitive.RadioItem>) {
   return (
-    <MenuPrimitive.RadioItem className={cn(itemClass, "pl-8", className)} {...props}>
+    <MenuPrimitive.RadioItem className={cn(menuItemClass, "pl-8", className)} {...props}>
       <span className="absolute left-2 flex size-4 items-center justify-center">
         <MenuPrimitive.ItemIndicator>
           <CheckIcon aria-hidden />
@@ -70,5 +77,5 @@ export function DropdownMenuSeparator({
   className,
   ...props
 }: ComponentProps<typeof MenuPrimitive.Separator>) {
-  return <MenuPrimitive.Separator className={cn("my-1 h-px bg-border", className)} {...props} />;
+  return <MenuPrimitive.Separator className={cn(menuSeparatorClass, className)} {...props} />;
 }

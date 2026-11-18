@@ -74,6 +74,86 @@ def test_import_caps_card_count_and_body_size(signed_in: SignedIn) -> None:
     assert client.get("/api/decks").json() == []
 
 
+def _deck_file(name: str, *fronts: str) -> dict[str, Any]:
+    cards = [{**BASIC_CARD, "front": front} for front in fronts]
+    return {**EXAMPLE_DECK, "deck": {"name": name, "description": ""}, "cards": cards}
+
+
+def test_batch_import_creates_one_deck_per_file_in_order(signed_in: SignedIn) -> None:
+    client, _ = signed_in("alice")
+    files = [_deck_file("Spanish::Day 1", "hola", "adios"), EXAMPLE_DECK]
+    response = client.post("/api/decks/import/batch", json={"files": files})
+    assert response.status_code == 201
+    decks = response.json()
+    assert [(d["name"], d["role"], d["card_count"]) for d in decks] == [
+        ("Spanish::Day 1", "owner", 2),
+        ("Linear algebra basics", "owner", 4),
+    ]
+    assert len(client.get("/api/decks").json()) == 2
+
+
+def test_batch_import_is_all_or_nothing_and_names_the_file(signed_in: SignedIn) -> None:
+    client, _ = signed_in("alice")
+    bad = _deck_file("Broken", "ok")
+    bad["cards"][0]["back"] = ""
+    response = client.post(
+        "/api/decks/import/batch", json={"files": [_deck_file("Fine", "hola"), bad]}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("files[1].cards[0].back:")
+    assert client.get("/api/decks").json() == []
+
+    for files in ([], [EXAMPLE_DECK] * 51):
+        response = client.post("/api/decks/import/batch", json={"files": files})
+        assert response.status_code == 422
+        assert response.json()["detail"].startswith("files: List should have at")
+
+    response = client.post(
+        "/api/decks/import/batch",
+        json={"files": [{**EXAMPLE_DECK, "cards": [BASIC_CARD] * 5000}] * 5},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("The files hold 25,000 cards together")
+    assert client.get("/api/decks").json() == []
+
+
+def test_batch_import_takes_up_to_16_mib(signed_in: SignedIn) -> None:
+    client, _ = signed_in("alice")
+    description = "y" * 1_900
+    big = {**EXAMPLE_DECK, "deck": {"name": "Big", "description": description}}
+    big["cards"] = [{**BASIC_CARD, "back": "z" * 1_000}] * 1_500
+    response = client.post("/api/decks/import/batch", json={"files": [big, big]})
+    assert response.status_code == 201  # About 3 MiB, over the single-file limit.
+
+    huge = json.dumps({"files": [big] * 12})
+    response = client.post(
+        "/api/decks/import/batch", content=huge, headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == (
+        "The files add up to more than 16 MiB. Import them in smaller groups."
+    )
+
+
+def test_batch_import_into_a_deck_needs_editor_and_adds_every_file(team: Team) -> None:
+    path = f"/api/decks/{team.deck_id}/import/batch"
+    files = {"files": [_deck_file("Ignored", "uno"), _deck_file("Also ignored", "dos", "tres")]}
+    assert team.viewer.post(path, json=files).status_code == 403
+    assert team.outsider.post(path, json=files).status_code == 404
+
+    response = team.editor.post(path, json=files)
+    assert response.status_code == 200
+    assert response.json()["imported"] == 3
+    assert response.json()["deck"]["card_count"] == 5
+    assert response.json()["deck"]["name"] == "Geography"
+
+    files["files"][1]["cards"][1]["type"] = "cloze"
+    response = team.editor.post(path, json=files)
+    assert response.status_code == 422
+    assert response.json()["detail"].startswith("files[1].cards[1]")
+    assert team.owner.get(f"/api/decks/{team.deck_id}").json()["card_count"] == 5
+
+
 def test_fork_is_an_independent_copy_owned_by_the_forker(team: Team) -> None:
     fork = team.viewer.post(f"/api/decks/{team.deck_id}/fork")
     assert fork.status_code == 201

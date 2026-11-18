@@ -1,7 +1,8 @@
 import { useRef, type ReactElement } from "react";
 
 // A hidden file input opened from any button or menu item, so the trigger can be styled freely.
-export function useFilePicker(onFile: (file: File) => void): {
+// Several deck files can be picked at once.
+export function useFilePicker(onFiles: (files: File[]) => void): {
   open: () => void;
   input: ReactElement;
 } {
@@ -11,12 +12,13 @@ export function useFilePicker(onFile: (file: File) => void): {
       ref={ref}
       type="file"
       accept=".json,application/json"
+      multiple
       hidden
       onChange={(event) => {
-        const file = event.target.files?.[0];
-        // Cleared so picking the same file again (after fixing it) fires another change.
+        const files = [...(event.target.files ?? [])];
+        // Cleared so picking the same files again (after fixing them) fires another change.
         event.target.value = "";
-        if (file) onFile(file);
+        if (files.length > 0) onFiles(files);
       }}
     />
   );

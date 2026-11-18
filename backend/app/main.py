@@ -1,3 +1,6 @@
+import functools
+import re
+
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -8,7 +11,13 @@ from app.db import SessionDep
 from app.deps import PUBLIC
 from app.models import CardKind
 from app.routers import admin, auth, cards, collections, decks, invites, me, members, reviews
-from app.routers.decks import ANKI_IMPORT_PATH, MAX_ANKI_UPLOAD_BYTES
+from app.routers.decks import (
+    ANKI_IMPORT_PATH,
+    BATCH_IMPORT_INTO_DECK_PATH,
+    BATCH_IMPORT_PATH,
+    MAX_ANKI_UPLOAD_BYTES,
+    MAX_BATCH_IMPORT_BYTES,
+)
 from app.web import SecurityHeaders, web_mount
 
 # JSON deck imports are the largest ordinary bodies. A proxy in front may cap lower, never higher.
@@ -19,7 +28,32 @@ LARGER_BODIES = {
         MAX_ANKI_UPLOAD_BYTES,
         "The Anki collection is larger than 64 MiB. Export smaller subdecks from Anki.",
     ),
+    BATCH_IMPORT_PATH: (
+        MAX_BATCH_IMPORT_BYTES,
+        "The files add up to more than 16 MiB. Import them in smaller groups.",
+    ),
+    BATCH_IMPORT_INTO_DECK_PATH: (
+        MAX_BATCH_IMPORT_BYTES,
+        "The files add up to more than 16 MiB. Import them in smaller groups.",
+    ),
 }
+DEFAULT_BODY_LIMIT = (
+    MAX_BODY_BYTES,
+    "The request body is larger than 2 MiB. Split the deck into smaller files.",
+)
+
+
+@functools.cache
+def _route_pattern(template: str) -> re.Pattern[str]:
+    # A route template's {parameter} matches one path segment.
+    return re.compile(re.sub(r"\\\{[^}]+\\\}", "[^/]+", re.escape(template)) + "$")
+
+
+def body_limit(path: str) -> tuple[int, str]:
+    for template, limits in LARGER_BODIES.items():
+        if _route_pattern(template).match(path):
+            return limits
+    return DEFAULT_BODY_LIMIT
 
 
 class BodySizeLimit:
@@ -37,13 +71,7 @@ class BodySizeLimit:
                 if headers.get(b"transfer-encoding"):
                     problem = (status.HTTP_411_LENGTH_REQUIRED, "Send a Content-Length header.")
             else:
-                limit, message = LARGER_BODIES.get(
-                    scope["path"],
-                    (
-                        MAX_BODY_BYTES,
-                        "The request body is larger than 2 MiB. Split the deck into smaller files.",
-                    ),
-                )
+                limit, message = body_limit(scope["path"])
                 if not length.isdigit() or int(length) > limit:
                     problem = (status.HTTP_413_CONTENT_TOO_LARGE, message)
             if problem:

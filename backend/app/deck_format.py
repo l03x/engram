@@ -6,6 +6,9 @@ from app.schemas import StrictModel
 
 MAX_TEXT_LENGTH = 20_000
 MAX_CARDS_PER_FILE = 5_000
+# One batch import takes several deck files in one request and one transaction.
+MAX_FILES_PER_IMPORT = 50
+MAX_CARDS_PER_IMPORT = 20_000
 
 CardText = Annotated[str, StringConstraints(min_length=1, max_length=MAX_TEXT_LENGTH)]
 OptionalCardText = Annotated[str, StringConstraints(max_length=MAX_TEXT_LENGTH)]
@@ -73,3 +76,17 @@ class DeckFile(StrictModel):
     version: Literal[1]
     deck: DeckMeta
     cards: Annotated[list[CardData], Field(max_length=MAX_CARDS_PER_FILE)]
+
+
+class DeckFileBatch(StrictModel):
+    files: Annotated[list[DeckFile], Field(min_length=1, max_length=MAX_FILES_PER_IMPORT)]
+
+    @model_validator(mode="after")
+    def check_total_cards(self) -> Self:
+        total = sum(len(file.cards) for file in self.files)
+        if total > MAX_CARDS_PER_IMPORT:
+            raise ValueError(
+                f"The files hold {total:,} cards together, more than the "
+                f"{MAX_CARDS_PER_IMPORT:,} one import takes. Import them in smaller groups."
+            )
+        return self

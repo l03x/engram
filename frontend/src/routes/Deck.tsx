@@ -43,7 +43,7 @@ import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { deckDisplayName, deckPath } from "@/lib/collections";
 import { downloadFromApi } from "@/lib/download";
-import { readJsonFile } from "@/lib/form";
+import { importDeckFiles } from "@/lib/deckImport";
 import { cn } from "@/lib/cn";
 import { firstLine, plural, studyCountsText } from "@/lib/format";
 import { invalidateDeck, isNotFound, useDeck } from "@/lib/queries";
@@ -281,13 +281,11 @@ export function DeckPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const importCards = useMutation({
-    mutationFn: async (file: File) =>
-      api<{ imported: number }>(`/decks/${deckId}/import`, {
-        method: "POST",
-        body: await readJsonFile(file),
-      }),
-    onSuccess: (result) => {
-      setNotice(`Imported ${plural(result.imported, "card")}.`);
+    mutationFn: (files: File[]) =>
+      importDeckFiles<{ imported: number }>(`/decks/${deckId}/import/batch`, files),
+    onSuccess: (result, files) => {
+      const from = files.length > 1 ? ` from ${plural(files.length, "file")}` : "";
+      setNotice(`Imported ${plural(result.imported, "card")}${from}.`);
       invalidateDeck(queryClient, deckId);
     },
   });
@@ -301,9 +299,9 @@ export function DeckPage() {
   const exportDeck = useMutation({
     mutationFn: () => downloadFromApi(`/decks/${deckId}/export`, "deck.engram.json"),
   });
-  const picker = useFilePicker((file) => {
+  const picker = useFilePicker((files) => {
     setNotice(null);
-    importCards.mutate(file);
+    importCards.mutate(files);
   });
 
   if (deck.isPending) return <LoadingRows rows={4} label="Loading deck" />;

@@ -20,7 +20,7 @@
 
 Going over the limit returns `429` with `Retry-After`. The counters live in process memory. That is why the backend runs as one uvicorn worker and one replica: a second process would get its own counters. Behind a proxy, the per-IP limits need `FORWARDED_ALLOW_IPS` (see [configuration](configuration.md#proxies-and-client-ips)).
 
-Request bodies are capped at 2 MiB, except the Anki import at 64 MiB. A proxy in front may cap lower, never higher.
+Request bodies are capped at 2 MiB, except importing several deck files at once (16 MiB) and the Anki import (64 MiB). A proxy in front may cap lower, never higher.
 
 ## Access rules
 

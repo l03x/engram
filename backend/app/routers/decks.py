@@ -17,7 +17,7 @@ from sqlmodel import Session, col, func, select
 from app.anki import AnkiFormatError, Conversion, convert_collection
 from app.cards import CardDetails, add_cards
 from app.db import SessionDep
-from app.deck_format import DeckFile, DeckMeta
+from app.deck_format import DeckFile, DeckFileBatch, DeckMeta
 from app.deps import CurrentUser, DeckAccess, EditorAccess, OwnerAccess, ViewerAccess
 from app.models import Card, Deck, DeckMember, DeckRole, ReviewLog, User, utcnow
 from app.scheduling import replayed_review_state, study_counts
@@ -107,6 +107,27 @@ def import_new_deck(body: DeckFile, user: CurrentUser, session: SessionDep) -> D
     add_cards(session, deck.id, body.cards)
     session.commit()
     return deck_views(session, user, [(deck, member)])[0]
+
+
+BATCH_IMPORT_PATH = "/api/decks/import/batch"
+BATCH_IMPORT_INTO_DECK_PATH = "/api/decks/{deck_id}/import/batch"
+MAX_BATCH_IMPORT_BYTES = 16 * 1024 * 1024
+
+
+@router.post("/import/batch", status_code=status.HTTP_201_CREATED)
+def import_new_decks(body: DeckFileBatch, user: CurrentUser, session: SessionDep) -> list[DeckView]:
+    """Create one deck from each of several deck files, in order.
+
+    All or nothing: if any file is invalid, no deck is created, and the error names the file by
+    its index (`files[2].cards[0].front`).
+    """
+    rows = []
+    for file in body.files:
+        deck, member = _create_owned_deck(session, user, file.deck)
+        add_cards(session, deck.id, file.cards)
+        rows.append((deck, member))
+    session.commit()
+    return deck_views(session, user, rows)
 
 
 ANKI_IMPORT_PATH = "/api/decks/import/anki"
@@ -345,3 +366,18 @@ def import_into_deck(body: DeckFile, access: EditorAccess, session: SessionDep) 
     session.commit()
     [deck_view] = deck_views(session, access.user, [(access.deck, access.member)])
     return ImportResult(imported=len(body.cards), deck=deck_view)
+
+
+@router.post("/{deck_id}/import/batch")
+def import_files_into_deck(
+    body: DeckFileBatch, access: EditorAccess, session: SessionDep
+) -> ImportResult:
+    """Add the cards from several deck files, in order. Their deck names are ignored.
+
+    All or nothing, like importing new decks from several files.
+    """
+    cards = [card for file in body.files for card in file.cards]
+    add_cards(session, access.deck.id, cards)
+    session.commit()
+    [deck_view] = deck_views(session, access.user, [(access.deck, access.member)])
+    return ImportResult(imported=len(cards), deck=deck_view)

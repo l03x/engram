@@ -33,7 +33,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import { buildDeckTree } from "@/lib/collections";
-import { formText, readJsonFile } from "@/lib/form";
+import { importDeckFiles } from "@/lib/deckImport";
+import { formText } from "@/lib/form";
+import { plural } from "@/lib/format";
 import type { Deck } from "@/lib/types";
 import { useFilePicker } from "@/lib/useFilePicker";
 import { AnkiImportDialog } from "@/routes/decks/AnkiImportDialog";
@@ -126,33 +128,41 @@ export function DecksPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<"new" | "anki" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const decks = useQuery({ queryKey: ["decks"], queryFn: () => api<Deck[]>("/decks") });
-  const importDeck = useMutation({
-    mutationFn: async (file: File) =>
-      api<Deck>("/decks/import", { method: "POST", body: await readJsonFile(file) }),
-    onSuccess: (deck) => {
+  const importDecks = useMutation({
+    mutationFn: (files: File[]) => importDeckFiles<Deck[]>("/decks/import/batch", files),
+    onSuccess: (imported) => {
       void queryClient.invalidateQueries({ queryKey: ["decks"] });
-      void navigate(`/decks/${deck.id}`);
+      // One deck opens straight away; several stay in the list, where they now appear.
+      const [only] = imported;
+      if (imported.length === 1 && only) {
+        void navigate(`/decks/${only.id}`);
+        return;
+      }
+      const cards = imported.reduce((total, deck) => total + deck.card_count, 0);
+      setNotice(`Imported ${plural(imported.length, "deck")} with ${plural(cards, "card")}.`);
     },
   });
-  const picker = useFilePicker((file) => {
-    importDeck.mutate(file);
+  const picker = useFilePicker((files) => {
+    setNotice(null);
+    importDecks.mutate(files);
   });
 
   const actions = (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="secondary" disabled={importDeck.isPending}>
+          <Button variant="secondary" disabled={importDecks.isPending}>
             <UploadIcon aria-hidden />
-            {importDeck.isPending ? "Importing…" : "Import"}
+            {importDecks.isPending ? "Importing…" : "Import"}
             <ChevronDownIcon aria-hidden />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={picker.open}>
             <FileJsonIcon aria-hidden />
-            Engram deck (.json)
+            Engram decks (.json)
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
@@ -180,7 +190,16 @@ export function DecksPage() {
       <title>Your decks · Engram</title>
       {picker.input}
       <PageHeader title="Your decks" actions={actions} />
-      <FormError error={importDeck.error} className="-mt-4" />
+      {(notice ?? importDecks.error) && (
+        <div className="-mt-4">
+          {notice && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {notice}
+            </p>
+          )}
+          <FormError error={importDecks.error} />
+        </div>
+      )}
       {decks.isPending ? (
         <LoadingRows label="Loading your decks" />
       ) : decks.isError ? (
@@ -188,7 +207,7 @@ export function DecksPage() {
       ) : decks.data.length === 0 ? (
         <EmptyState title="No decks yet" icon={GalleryVerticalEndIcon}>
           <p className="text-sm text-muted-foreground">
-            Create a deck and add cards, or import one from Anki or a JSON deck file.
+            Create a deck and add cards, or import from Anki or from JSON deck files.
           </p>
         </EmptyState>
       ) : (

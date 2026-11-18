@@ -3,7 +3,7 @@
   "info": {
     "title": "Engram API",
     "description": "The JSON API behind the Engram web app. The page and the API share one origin, and every\nAPI path starts with `/api`.\n\n## Signing in\n\n1. `POST /api/auth/login` (or redeeming an invite) returns an `access_token` and sets the\n   `engram_refresh` cookie: httpOnly, Secure, SameSite=Lax, `Path=/api/auth`.\n2. Send `Authorization: Bearer <access_token>` with every other request. Access tokens last\n   15 minutes.\n3. On a 401, call `POST /api/auth/refresh` with the cookie and the header\n   `X-Engram-CSRF: 1`, then retry the request once. Each refresh token works once, so run\n   one refresh at a time: presenting a used token signs out every session from that sign-in.\n\nA password change, or an admin deactivating the account, ends every session at once, access\ntokens included.\n\n## Errors\n\nAn error is JSON with a `detail` sentence written to be shown to the user as it is. A 422\nadds `errors`, one `{field, message}` per problem, with paths like `cards[12].options`.\n\n## Decks and roles\n\nEach member of a deck is its owner, an editor or a viewer. A deck you aren't a member of\nanswers 404, exactly like one that doesn't exist. A member whose role is too low gets 403.\n\n## Collections\n\nA deck named `Java::Day 1` is the deck `Day 1` in the collection `Java`. Collections aren't\nstored: `/api/collections` routes take the path as `?path=Java` and act on the decks under it\nthat you're a member of. Changing names or members needs you to own a deck, and decks you\ndon't own are left alone and counted as `skipped`.\n\n## Limits\n\nRequest bodies are capped at 2 MiB (64 MiB for an Anki upload) and need a `Content-Length`\n(411 without one). Sign-in, refresh and invite routes are rate-limited per client IP; a 429\ncarries `Retry-After` in seconds.\n",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/health": {
@@ -1209,6 +1209,77 @@
         ]
       }
     },
+    "/api/decks/import/batch": {
+      "post": {
+        "tags": [
+          "decks"
+        ],
+        "summary": "Create one deck from each of several deck files, in order.",
+        "operationId": "import_new_decks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeckFileBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeckView"
+                  },
+                  "type": "array",
+                  "title": "Response Import New Decks Api Decks Import Batch Post"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The access token is missing or expired. Refresh it and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is larger than 16 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request doesn't match the schema; `errors` lists each problem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "description": "All or nothing: if any file is invalid, no deck is created, and the error names the file by\nits index (`files[2].cards[0].front`)."
+      }
+    },
     "/api/decks/import/anki": {
       "post": {
         "tags": [
@@ -1860,6 +1931,105 @@
             }
           }
         }
+      }
+    },
+    "/api/decks/{deck_id}/import/batch": {
+      "post": {
+        "tags": [
+          "decks"
+        ],
+        "summary": "Add the cards from several deck files, in order. Their deck names are ignored.",
+        "operationId": "import_files_into_deck",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "deck_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Deck Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeckFileBatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The access token is missing or expired. Refresh it and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Your role on the deck is viewer; this needs editor or owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The deck doesn't exist, or you aren't a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The body is larger than 16 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The request doesn't match the schema; `errors` lists each problem.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "All or nothing, like importing new decks from several files."
       }
     },
     "/api/decks/{deck_id}/members": {
@@ -4533,6 +4703,25 @@
           "cards"
         ],
         "title": "DeckFile"
+      },
+      "DeckFileBatch": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DeckFile"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Files"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "DeckFileBatch"
       },
       "DeckMeta": {
         "properties": {
